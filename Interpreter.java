@@ -92,7 +92,8 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
 
     Map<String, LoxFunction> methods = new HashMap<>();
     for (Stmt.Function method : stmt.methods) {
-      LoxFunction function = new LoxFunction(method, environment, method.name.lexeme.equals("init"));
+      LoxFunction function =
+          new LoxFunction(method, environment, method.name.lexeme.equals("init"));
       methods.put(method.name.lexeme, function);
     }
 
@@ -140,13 +141,13 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
   public Void visitReturnStmt(Stmt.Return stmt) {
     Object value = null;
     if (stmt.value != null) value = evaluate(stmt.value);
-
     throw new Return(value);
   }
 
+  // UPDATED: if no initializer, store Environment.UNINITIALIZED instead of null.
   @Override
   public Void visitVarStmt(Stmt.Var stmt) {
-    Object value = null;
+    Object value = Environment.UNINITIALIZED;
     if (stmt.initializer != null) {
       value = evaluate(stmt.initializer);
     }
