@@ -8,17 +8,20 @@ import java.util.Stack;
 class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
   private final Interpreter interpreter;
   private final Stack<Map<String, Variable>> scopes = new Stack<>();
+  private final Stack<Integer> nextSlots = new Stack<>();
   private FunctionType currentFunction = FunctionType.NONE;
 
   private static class Variable {
+    final Token name;
     boolean defined;
     boolean used;
-    Token name;
+    final int slot;
 
-    Variable(Token name, boolean defined) {
+    Variable(Token name, boolean defined, int slot) {
       this.name = name;
       this.defined = defined;
       this.used = false;
+      this.slot = slot;
     }
   }
 
@@ -47,15 +50,16 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
 
   private void beginScope() {
     scopes.push(new HashMap<String, Variable>());
+    nextSlots.push(0);
   }
 
   private void endScope() {
     Map<String, Variable> scope = scopes.pop();
+    nextSlots.pop();
 
     for (Variable variable : scope.values()) {
       if (variable.defined && !variable.used) {
-        Lox.error(variable.name,
-            "Local variable is never used.");
+        Lox.error(variable.name, "Local variable is never used.");
       }
     }
   }
@@ -213,7 +217,11 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
           "Already a variable with this name in this scope.");
     }
 
-    scope.put(name.lexeme, new Variable(name, false));
+    int slot = nextSlots.peek();
+    nextSlots.pop();
+    nextSlots.push(slot + 1);
+
+    scope.put(name.lexeme, new Variable(name, false, slot));
   }
 
   private void define(Token name) {
@@ -225,8 +233,9 @@ class Resolver implements Expr.Visitor<Void>, Stmt.Visitor<Void> {
     for (int i = scopes.size() - 1; i >= 0; i--) {
       Map<String, Variable> scope = scopes.get(i);
       if (scope.containsKey(name.lexeme)) {
-        scope.get(name.lexeme).used = true;
-        interpreter.resolve(expr, scopes.size() - 1 - i);
+        Variable variable = scope.get(name.lexeme);
+        variable.used = true;
+        interpreter.resolve(expr, scopes.size() - 1 - i, variable.slot);
         return;
       }
     }
