@@ -1,25 +1,12 @@
 package com.craftinginterpreters.lox;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 class Interpreter implements Expr.Visitor<Object>,
                              Stmt.Visitor<Void> {
   final Environment globals = new Environment();
   private Environment environment = globals;
-
-  private static class Local {
-    final int distance;
-    final int slot;
-
-    Local(int distance, int slot) {
-      this.distance = distance;
-      this.slot = slot;
-    }
-  }
-
-  private final Map<Expr, Local> locals = new HashMap<>();
 
   Interpreter() {
     globals.define("clock", new LoxCallable() {
@@ -47,70 +34,95 @@ class Interpreter implements Expr.Visitor<Object>,
     }
   }
 
-  private String stringify(Object object) {
-    if (object == null) return "nil";
+  private void execute(Stmt stmt) {
+    stmt.accept(this);
+  }
 
-    if (object instanceof Double) {
-      String text = object.toString();
-      if (text.endsWith(".0")) {
-        text = text.substring(0, text.length() - 2);
+  void executeBlock(List<Stmt> statements,
+                    Environment environment) {
+    Environment previous = this.environment;
+    try {
+      this.environment = environment;
+
+      for (Stmt statement : statements) {
+        execute(statement);
       }
-      return text;
+    } finally {
+      this.environment = previous;
     }
+  }
 
-    return object.toString();
+  private Object evaluate(Expr expr) {
+    return expr.accept(this);
   }
 
   @Override
-  public Object visitLiteralExpr(Expr.Literal expr) {
-    return expr.value;
-  }
-
-  @Override
-  public Object visitGroupingExpr(Expr.Grouping expr) {
-    return evaluate(expr.expression);
-  }
-
-  @Override
-  public Object visitUnaryExpr(Expr.Unary expr) {
-    Object right = evaluate(expr.right);
-
-    switch (expr.operator.type) {
-      case MINUS:
-        checkNumberOperand(expr.operator, right);
-        return -(double)right;
-      case BANG:
-        return !isTruthy(right);
-    }
-
+  public Void visitBlockStmt(Stmt.Block stmt) {
+    executeBlock(stmt.statements, new Environment(environment));
     return null;
   }
 
   @Override
-  public Object visitVariableExpr(Expr.Variable expr) {
-    return lookUpVariable(expr.name, expr);
+  public Void visitExpressionStmt(Stmt.Expression stmt) {
+    evaluate(stmt.expression);
+    return null;
   }
 
-  private Object lookUpVariable(Token name, Expr expr) {
-    Local local = locals.get(expr);
-    if (local != null) {
-      return environment.getAt(local.distance, local.slot);
+  @Override
+  public Void visitFunctionStmt(Stmt.Function stmt) {
+    LoxFunction function = new LoxFunction(stmt, environment);
+    environment.define(stmt.name.lexeme, function);
+    return null;
+  }
+
+  @Override
+  public Void visitIfStmt(Stmt.If stmt) {
+    if (isTruthy(evaluate(stmt.condition))) {
+      execute(stmt.thenBranch);
+    } else if (stmt.elseBranch != null) {
+      execute(stmt.elseBranch);
+    }
+    return null;
+  }
+
+  @Override
+  public Void visitPrintStmt(Stmt.Print stmt) {
+    Object value = evaluate(stmt.expression);
+    System.out.println(stringify(value));
+    return null;
+  }
+
+  @Override
+  public Void visitReturnStmt(Stmt.Return stmt) {
+    Object value = null;
+    if (stmt.value != null) value = evaluate(stmt.value);
+
+    throw new Return(value);
+  }
+
+  @Override
+  public Void visitVarStmt(Stmt.Var stmt) {
+    Object value = null;
+    if (stmt.initializer != null) {
+      value = evaluate(stmt.initializer);
     }
 
-    return globals.get(name);
+    environment.define(stmt.name.lexeme, value);
+    return null;
+  }
+
+  @Override
+  public Void visitWhileStmt(Stmt.While stmt) {
+    while (isTruthy(evaluate(stmt.condition))) {
+      execute(stmt.body);
+    }
+    return null;
   }
 
   @Override
   public Object visitAssignExpr(Expr.Assign expr) {
     Object value = evaluate(expr.value);
-
-    Local local = locals.get(expr);
-    if (local != null) {
-      environment.assignAt(local.distance, local.slot, value);
-    } else {
-      globals.assign(expr.name, value);
-    }
-
+    environment.assign(expr.name, value);
     return value;
   }
 
@@ -120,6 +132,9 @@ class Interpreter implements Expr.Visitor<Object>,
     Object right = evaluate(expr.right);
 
     switch (expr.operator.type) {
+      case BANG_EQUAL: return !isEqual(left, right);
+      case EQUAL_EQUAL: return isEqual(left, right);
+
       case GREATER:
         checkNumberOperands(expr.operator, left, right);
         return (double)left > (double)right;
@@ -132,6 +147,7 @@ class Interpreter implements Expr.Visitor<Object>,
       case LESS_EQUAL:
         checkNumberOperands(expr.operator, left, right);
         return (double)left <= (double)right;
+
       case MINUS:
         checkNumberOperands(expr.operator, left, right);
         return (double)left - (double)right;
@@ -139,45 +155,29 @@ class Interpreter implements Expr.Visitor<Object>,
         if (left instanceof Double && right instanceof Double) {
           return (double)left + (double)right;
         }
-        if (left instanceof String || right instanceof String) {
-          return stringify(left) + stringify(right);
+
+        if (left instanceof String && right instanceof String) {
+          return (String)left + (String)right;
         }
+
         throw new RuntimeError(expr.operator,
-            "Operands must be two numbers or at least one string.");
+            "Operands must be two numbers or two strings.");
       case SLASH:
         checkNumberOperands(expr.operator, left, right);
-        if ((double) right == 0) {
-          throw new RuntimeError(expr.operator, "Division by zero.");
-        }
         return (double)left / (double)right;
       case STAR:
         checkNumberOperands(expr.operator, left, right);
         return (double)left * (double)right;
-      case BANG_EQUAL: return !isEqual(left, right);
-      case EQUAL_EQUAL: return isEqual(left, right);
     }
 
     return null;
   }
 
   @Override
-  public Object visitLogicalExpr(Expr.Logical expr) {
-    Object left = evaluate(expr.left);
-
-    if (expr.operator.type == TokenType.OR) {
-      if (isTruthy(left)) return left;
-    } else {
-      if (!isTruthy(left)) return left;
-    }
-
-    return evaluate(expr.right);
-  }
-
-  @Override
   public Object visitCallExpr(Expr.Call expr) {
     Object callee = evaluate(expr.callee);
 
-    List<Object> arguments = new java.util.ArrayList<>();
+    List<Object> arguments = new ArrayList<>();
     for (Expr argument : expr.arguments) {
       arguments.add(evaluate(argument));
     }
@@ -198,102 +198,51 @@ class Interpreter implements Expr.Visitor<Object>,
   }
 
   @Override
-  public Void visitExpressionStmt(Stmt.Expression stmt) {
-    evaluate(stmt.expression);
-    return null;
+  public Object visitFunctionExpr(Expr.Function expr) {
+    return new LoxFunction(expr, environment);
   }
 
   @Override
-  public Void visitPrintStmt(Stmt.Print stmt) {
-    Object value = evaluate(stmt.expression);
-    System.out.println(stringify(value));
-    return null;
+  public Object visitGroupingExpr(Expr.Grouping expr) {
+    return evaluate(expr.expression);
   }
 
   @Override
-  public Void visitVarStmt(Stmt.Var stmt) {
-    Object value = null;
-    if (stmt.initializer != null) {
-      value = evaluate(stmt.initializer);
-    }
+  public Object visitLiteralExpr(Expr.Literal expr) {
+    return expr.value;
+  }
 
-    if (environment == globals) {
-      environment.define(stmt.name.lexeme, value);
+  @Override
+  public Object visitLogicalExpr(Expr.Logical expr) {
+    Object left = evaluate(expr.left);
+
+    if (expr.operator.type == TokenType.OR) {
+      if (isTruthy(left)) return left;
     } else {
-      environment.defineLocal(value);
+      if (!isTruthy(left)) return left;
+    }
+
+    return evaluate(expr.right);
+  }
+
+  @Override
+  public Object visitUnaryExpr(Expr.Unary expr) {
+    Object right = evaluate(expr.right);
+
+    switch (expr.operator.type) {
+      case BANG:
+        return !isTruthy(right);
+      case MINUS:
+        checkNumberOperand(expr.operator, right);
+        return -(double)right;
     }
 
     return null;
   }
 
   @Override
-  public Void visitBlockStmt(Stmt.Block stmt) {
-    executeBlock(stmt.statements, new Environment(environment));
-    return null;
-  }
-
-  void executeBlock(List<Stmt> statements, Environment environment) {
-    Environment previous = this.environment;
-    try {
-      this.environment = environment;
-
-      for (Stmt statement : statements) {
-        execute(statement);
-      }
-    } finally {
-      this.environment = previous;
-    }
-  }
-
-  @Override
-  public Void visitIfStmt(Stmt.If stmt) {
-    if (isTruthy(evaluate(stmt.condition))) {
-      execute(stmt.thenBranch);
-    } else if (stmt.elseBranch != null) {
-      execute(stmt.elseBranch);
-    }
-    return null;
-  }
-
-  @Override
-  public Void visitWhileStmt(Stmt.While stmt) {
-    while (isTruthy(evaluate(stmt.condition))) {
-      execute(stmt.body);
-    }
-    return null;
-  }
-
-  @Override
-  public Void visitFunctionStmt(Stmt.Function stmt) {
-    LoxFunction function = new LoxFunction(stmt, environment);
-
-    if (environment == globals) {
-      environment.define(stmt.name.lexeme, function);
-    } else {
-      environment.defineLocal(function);
-    }
-
-    return null;
-  }
-
-  @Override
-  public Void visitReturnStmt(Stmt.Return stmt) {
-    Object value = null;
-    if (stmt.value != null) value = evaluate(stmt.value);
-
-    throw new Return(value);
-  }
-
-  private void execute(Stmt stmt) {
-    stmt.accept(this);
-  }
-
-  private Object evaluate(Expr expr) {
-    return expr.accept(this);
-  }
-
-  void resolve(Expr expr, int distance, int slot) {
-    locals.put(expr, new Local(distance, slot));
+  public Object visitVariableExpr(Expr.Variable expr) {
+    return environment.get(expr.name);
   }
 
   private boolean isTruthy(Object object) {
@@ -319,5 +268,19 @@ class Interpreter implements Expr.Visitor<Object>,
     if (left instanceof Double && right instanceof Double) return;
 
     throw new RuntimeError(operator, "Operands must be numbers.");
+  }
+
+  private String stringify(Object object) {
+    if (object == null) return "nil";
+
+    if (object instanceof Double) {
+      String text = object.toString();
+      if (text.endsWith(".0")) {
+        text = text.substring(0, text.length() - 2);
+      }
+      return text;
+    }
+
+    return object.toString();
   }
 }
