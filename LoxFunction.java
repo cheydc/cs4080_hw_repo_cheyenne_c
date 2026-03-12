@@ -8,6 +8,7 @@ class LoxFunction implements LoxCallable {
   private final List<Stmt> body;
   private final Environment closure;
   private final boolean isInitializer;
+  private final boolean isGetter;
 
   LoxFunction(Stmt.Function declaration, Environment closure, boolean isInitializer) {
     this.name = declaration.name.lexeme;
@@ -15,6 +16,7 @@ class LoxFunction implements LoxCallable {
     this.body = declaration.body;
     this.closure = closure;
     this.isInitializer = isInitializer;
+    this.isGetter = declaration.isGetter;
   }
 
   LoxFunction(Expr.Function function, Environment closure) {
@@ -23,21 +25,27 @@ class LoxFunction implements LoxCallable {
     this.body = function.body;
     this.closure = closure;
     this.isInitializer = false;
-  }
-
-  LoxFunction bind(LoxInstance instance) {
-    Environment environment = new Environment(closure);
-    environment.define("this", instance);
-    return new LoxFunction(name, params, body, environment, isInitializer);
+    this.isGetter = false;
   }
 
   private LoxFunction(String name, List<Token> params, List<Stmt> body,
-                      Environment closure, boolean isInitializer) {
+                      Environment closure, boolean isInitializer, boolean isGetter) {
     this.name = name;
     this.params = params;
     this.body = body;
     this.closure = closure;
     this.isInitializer = isInitializer;
+    this.isGetter = isGetter;
+  }
+
+  LoxFunction bind(LoxInstance instance) {
+    Environment environment = new Environment(closure);
+    environment.define("this", instance);
+    return new LoxFunction(name, params, body, environment, isInitializer, isGetter);
+  }
+
+  boolean isGetter() {
+    return isGetter;
   }
 
   @Override
