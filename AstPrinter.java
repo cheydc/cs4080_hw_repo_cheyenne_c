@@ -12,18 +12,33 @@ class AstPrinter implements Expr.Visitor<String> {
 
   @Override
   public String visitBinaryExpr(Expr.Binary expr) {
-    return parenthesize(expr.operator.lexeme,
-        expr.left, expr.right);
+    return parenthesize(expr.operator.lexeme, expr.left, expr.right);
   }
 
   @Override
   public String visitCallExpr(Expr.Call expr) {
-    return parenthesize("call", expr.callee);
+    StringBuilder builder = new StringBuilder();
+
+    builder.append("(call ");
+    builder.append(expr.callee.accept(this));
+
+    for (Expr argument : expr.arguments) {
+      builder.append(" ");
+      builder.append(argument.accept(this));
+    }
+
+    builder.append(")");
+    return builder.toString();
   }
 
   @Override
   public String visitFunctionExpr(Expr.Function expr) {
     return "<fn>";
+  }
+
+  @Override
+  public String visitGetExpr(Expr.Get expr) {
+    return parenthesize(". " + expr.name.lexeme, expr.object);
   }
 
   @Override
@@ -39,8 +54,17 @@ class AstPrinter implements Expr.Visitor<String> {
 
   @Override
   public String visitLogicalExpr(Expr.Logical expr) {
-    return parenthesize(expr.operator.lexeme,
-        expr.left, expr.right);
+    return parenthesize(expr.operator.lexeme, expr.left, expr.right);
+  }
+
+  @Override
+  public String visitSetExpr(Expr.Set expr) {
+    return parenthesize("set " + expr.name.lexeme, expr.object, expr.value);
+  }
+
+  @Override
+  public String visitThisExpr(Expr.This expr) {
+    return "this";
   }
 
   @Override

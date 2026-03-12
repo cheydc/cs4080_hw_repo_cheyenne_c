@@ -1,10 +1,10 @@
 package com.craftinginterpreters.lox;
 
-import static com.craftinginterpreters.lox.TokenType.*;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import static com.craftinginterpreters.lox.TokenType.*;
 
 class Parser {
   private static class ParseError extends RuntimeException {}
@@ -31,6 +31,7 @@ class Parser {
 
   private Stmt declaration() {
     try {
+      if (match(CLASS)) return classDeclaration();
       if (match(FUN)) return function("function");
       if (match(VAR)) return varDeclaration();
 
@@ -41,37 +42,24 @@ class Parser {
     }
   }
 
-  private Stmt function(String kind) {
-    Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
-    consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
-    List<Token> parameters = new ArrayList<>();
-    if (!check(RIGHT_PAREN)) {
-      do {
-        if (parameters.size() >= 255) {
-          error(peek(), "Can't have more than 255 parameters.");
-        }
+  private Stmt classDeclaration() {
+    Token name = consume(IDENTIFIER, "Expect class name.");
+    consume(LEFT_BRACE, "Expect '{' before class body.");
 
-        parameters.add(
-            consume(IDENTIFIER, "Expect parameter name."));
-      } while (match(COMMA));
-    }
-    consume(RIGHT_PAREN, "Expect ')' after parameters.");
+    List<Stmt.Function> methods = new ArrayList<>();
+    List<Stmt.Function> classMethods = new ArrayList<>();
 
-    consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
-    List<Stmt> body = block();
-    return new Stmt.Function(name, parameters, body);
-  }
-
-  private Stmt varDeclaration() {
-    Token name = consume(IDENTIFIER, "Expect variable name.");
-
-    Expr initializer = null;
-    if (match(EQUAL)) {
-      initializer = expression();
+    while (!check(RIGHT_BRACE) && !isAtEnd()) {
+      if (match(CLASS)) {
+        classMethods.add(function("method"));
+      } else {
+        methods.add(function("method"));
+      }
     }
 
-    consume(SEMICOLON, "Expect ';' after variable declaration.");
-    return new Stmt.Var(name, initializer);
+    consume(RIGHT_BRACE, "Expect '}' after class body.");
+
+    return new Stmt.Class(name, methods, classMethods);
   }
 
   private Stmt statement() {
@@ -160,6 +148,18 @@ class Parser {
     return new Stmt.Return(keyword, value);
   }
 
+  private Stmt varDeclaration() {
+    Token name = consume(IDENTIFIER, "Expect variable name.");
+
+    Expr initializer = null;
+    if (match(EQUAL)) {
+      initializer = expression();
+    }
+
+    consume(SEMICOLON, "Expect ';' after variable declaration.");
+    return new Stmt.Var(name, initializer);
+  }
+
   private Stmt whileStatement() {
     consume(LEFT_PAREN, "Expect '(' after 'while'.");
     Expr condition = expression();
@@ -173,6 +173,27 @@ class Parser {
     Expr expr = expression();
     consume(SEMICOLON, "Expect ';' after expression.");
     return new Stmt.Expression(expr);
+  }
+
+  private Stmt.Function function(String kind) {
+    Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
+    consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+    List<Token> parameters = new ArrayList<>();
+    if (!check(RIGHT_PAREN)) {
+      do {
+        if (parameters.size() >= 255) {
+          error(peek(), "Can't have more than 255 parameters.");
+        }
+
+        parameters.add(
+            consume(IDENTIFIER, "Expect parameter name."));
+      } while (match(COMMA));
+    }
+    consume(RIGHT_PAREN, "Expect ')' after parameters.");
+
+    consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+    List<Stmt> body = block();
+    return new Stmt.Function(name, parameters, body);
   }
 
   private List<Stmt> block() {
@@ -196,6 +217,9 @@ class Parser {
       if (expr instanceof Expr.Variable) {
         Token name = ((Expr.Variable)expr).name;
         return new Expr.Assign(name, value);
+      } else if (expr instanceof Expr.Get) {
+        Expr.Get get = (Expr.Get)expr;
+        return new Expr.Set(get.object, get.name, value);
       }
 
       error(equals, "Invalid assignment target.");
@@ -286,20 +310,6 @@ class Parser {
     return call();
   }
 
-  private Expr call() {
-    Expr expr = primary();
-
-    while (true) {
-      if (match(LEFT_PAREN)) {
-        expr = finishCall(expr);
-      } else {
-        break;
-      }
-    }
-
-    return expr;
-  }
-
   private Expr finishCall(Expr callee) {
     List<Expr> arguments = new ArrayList<>();
     if (!check(RIGHT_PAREN)) {
@@ -317,6 +327,24 @@ class Parser {
     return new Expr.Call(callee, paren, arguments);
   }
 
+  private Expr call() {
+    Expr expr = primary();
+
+    while (true) {
+      if (match(LEFT_PAREN)) {
+        expr = finishCall(expr);
+      } else if (match(DOT)) {
+        Token name = consume(IDENTIFIER,
+            "Expect property name after '.'.");
+        expr = new Expr.Get(expr, name);
+      } else {
+        break;
+      }
+    }
+
+    return expr;
+  }
+
   private Expr primary() {
     if (match(FALSE)) return new Expr.Literal(false);
     if (match(TRUE)) return new Expr.Literal(true);
@@ -326,7 +354,7 @@ class Parser {
       return new Expr.Literal(previous().literal);
     }
 
-    if (match(FUN)) return functionExpression();
+    if (match(THIS)) return new Expr.This(previous());
 
     if (match(IDENTIFIER)) {
       return new Expr.Variable(previous());
@@ -339,28 +367,6 @@ class Parser {
     }
 
     throw error(peek(), "Expect expression.");
-  }
-
-  private Expr functionExpression() {
-    consume(LEFT_PAREN, "Expect '(' after 'fun'.");
-
-    List<Token> parameters = new ArrayList<>();
-    if (!check(RIGHT_PAREN)) {
-      do {
-        if (parameters.size() >= 255) {
-          error(peek(), "Can't have more than 255 parameters.");
-        }
-
-        parameters.add(
-            consume(IDENTIFIER, "Expect parameter name."));
-      } while (match(COMMA));
-    }
-
-    consume(RIGHT_PAREN, "Expect ')' after parameters.");
-    consume(LEFT_BRACE, "Expect '{' before function body.");
-    List<Stmt> body = block();
-
-    return new Expr.Function(parameters, body);
   }
 
   private boolean match(TokenType... types) {

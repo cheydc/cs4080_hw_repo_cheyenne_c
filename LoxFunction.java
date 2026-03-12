@@ -7,12 +7,14 @@ class LoxFunction implements LoxCallable {
   private final List<Token> params;
   private final List<Stmt> body;
   private final Environment closure;
+  private final boolean isInitializer;
 
-  LoxFunction(Stmt.Function declaration, Environment closure) {
+  LoxFunction(Stmt.Function declaration, Environment closure, boolean isInitializer) {
     this.name = declaration.name.lexeme;
     this.params = declaration.params;
     this.body = declaration.body;
     this.closure = closure;
+    this.isInitializer = isInitializer;
   }
 
   LoxFunction(Expr.Function function, Environment closure) {
@@ -20,6 +22,22 @@ class LoxFunction implements LoxCallable {
     this.params = function.params;
     this.body = function.body;
     this.closure = closure;
+    this.isInitializer = false;
+  }
+
+  LoxFunction bind(LoxInstance instance) {
+    Environment environment = new Environment(closure);
+    environment.define("this", instance);
+    return new LoxFunction(name, params, body, environment, isInitializer);
+  }
+
+  private LoxFunction(String name, List<Token> params, List<Stmt> body,
+                      Environment closure, boolean isInitializer) {
+    this.name = name;
+    this.params = params;
+    this.body = body;
+    this.closure = closure;
+    this.isInitializer = isInitializer;
   }
 
   @Override
@@ -28,8 +46,7 @@ class LoxFunction implements LoxCallable {
   }
 
   @Override
-  public Object call(Interpreter interpreter,
-                     List<Object> arguments) {
+  public Object call(Interpreter interpreter, List<Object> arguments) {
     Environment environment = new Environment(closure);
     for (int i = 0; i < params.size(); i++) {
       environment.define(params.get(i).lexeme, arguments.get(i));
@@ -38,9 +55,11 @@ class LoxFunction implements LoxCallable {
     try {
       interpreter.executeBlock(body, environment);
     } catch (Return returnValue) {
+      if (isInitializer) return closure.getAt(0, "this");
       return returnValue.value;
     }
 
+    if (isInitializer) return closure.getAt(0, "this");
     return null;
   }
 
