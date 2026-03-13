@@ -1,0 +1,8 @@
+var x = 7;
+print x > 5 ? "big" : "small";
+
+var y = nil;
+print y ? "truthy" : "falsey";
+
+print true ? 1 : 2;
+print false ? 1 : 2;

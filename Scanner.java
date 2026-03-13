@@ -31,6 +31,7 @@ class Scanner {
     keywords.put("true",   TRUE);
     keywords.put("var",    VAR);
     keywords.put("while",  WHILE);
+    keywords.put("with",   WITH);
   }
 
   private int start = 0;
@@ -64,6 +65,8 @@ class Scanner {
       case '+': addToken(PLUS); break;
       case ';': addToken(SEMICOLON); break;
       case '*': addToken(STAR); break;
+      case '?': addToken(QUESTION); break;
+      case ':': addToken(COLON); break;
 
       case '!':
         addToken(match('=') ? BANG_EQUAL : BANG);
@@ -125,7 +128,6 @@ class Scanner {
 
     if (peek() == '.' && isDigit(peekNext())) {
       advance();
-
       while (isDigit(peek())) advance();
     }
 

@@ -13,6 +13,7 @@ abstract class Expr {
     R visitLiteralExpr(Literal expr);
     R visitLogicalExpr(Logical expr);
     R visitSetExpr(Set expr);
+    R visitTernaryExpr(Ternary expr);
     R visitThisExpr(This expr);
     R visitUnaryExpr(Unary expr);
     R visitVariableExpr(Variable expr);
@@ -154,6 +155,23 @@ abstract class Expr {
     @Override
     <R> R accept(Visitor<R> visitor) {
       return visitor.visitSetExpr(this);
+    }
+  }
+
+  static class Ternary extends Expr {
+    final Expr condition;
+    final Expr thenBranch;
+    final Expr elseBranch;
+
+    Ternary(Expr condition, Expr thenBranch, Expr elseBranch) {
+      this.condition = condition;
+      this.thenBranch = thenBranch;
+      this.elseBranch = elseBranch;
+    }
+
+    @Override
+    <R> R accept(Visitor<R> visitor) {
+      return visitor.visitTernaryExpr(this);
     }
   }
 
