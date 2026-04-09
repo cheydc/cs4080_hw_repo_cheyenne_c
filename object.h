@@ -15,11 +15,12 @@ struct Obj {
   struct Obj* next;
 };
 
-typedef struct {
+struct ObjString {
   Obj obj;
   int length;
-  char chars[];
-} ObjString;
+  char* chars;
+  bool ownsChars;
+};
 
 #define IS_STRING(value) isObjType(value, OBJ_STRING)
 #define AS_STRING(value) ((ObjString*)AS_OBJ(value))
