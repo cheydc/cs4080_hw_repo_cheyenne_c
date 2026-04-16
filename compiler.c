@@ -39,6 +39,16 @@ typedef struct {
   Precedence precedence;
 } ParseRule;
 
+#define MAX_GLOBALS 256
+
+typedef struct {
+  ObjString* name;
+  bool defined;
+} GlobalEntry;
+
+static GlobalEntry globalRegistry[MAX_GLOBALS];
+static int globalCount = 0;
+
 Parser parser;
 Chunk* compilingChunk;
 
@@ -136,26 +146,28 @@ static void declaration();
 static ParseRule* getRule(TokenType type);
 static void parsePrecedence(Precedence precedence);
 
-// MODIFIED: now scans existing constants to avoid duplicates
-static uint8_t identifierConstant(Token* name) {
+// Resolves a name to an index in the global registry, adding it if new
+static uint8_t resolveOrAddGlobal(Token* name) {
   ObjString* str = copyString(name->start, name->length);
-
-  for (int i = 0; i < currentChunk()->constants.count; i++) {
-    Value val = currentChunk()->constants.values[i];
-    if (IS_STRING(val) && AS_STRING(val) == str) {
-      return (uint8_t)i;
-    }
+  for (int i = 0; i < globalCount; i++) {
+    if (globalRegistry[i].name == str) return (uint8_t)i;
   }
-
-  return makeConstant(OBJ_VAL(str));
+  if (globalCount == MAX_GLOBALS) {
+    error("Too many global variables.");
+    return 0;
+  }
+  globalRegistry[globalCount].name = str;
+  globalRegistry[globalCount].defined = false;
+  return (uint8_t)globalCount++;
 }
 
 static uint8_t parseVariable(const char* errorMessage) {
   consume(TOKEN_IDENTIFIER, errorMessage);
-  return identifierConstant(&parser.previous);
+  return resolveOrAddGlobal(&parser.previous);
 }
 
 static void defineVariable(uint8_t global) {
+  globalRegistry[global].defined = true;
   emitBytes(OP_DEFINE_GLOBAL, global);
 }
 
@@ -204,7 +216,7 @@ static void string(bool canAssign) {
 }
 
 static void namedVariable(Token name, bool canAssign) {
-  uint8_t arg = identifierConstant(&name);
+  uint8_t arg = resolveOrAddGlobal(&name);
   if (canAssign && match(TOKEN_EQUAL)) {
     expression();
     emitBytes(OP_SET_GLOBAL, arg);
@@ -366,6 +378,7 @@ bool compile(const char* source, Chunk* chunk) {
   compilingChunk = chunk;
   parser.hadError = false;
   parser.panicMode = false;
+  globalCount = 0;
   advance();
   while (!match(TOKEN_EOF)) {
     declaration();
