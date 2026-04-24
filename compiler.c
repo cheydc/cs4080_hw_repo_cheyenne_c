@@ -518,11 +518,13 @@ ParseRule rules[] = {
   [TOKEN_NIL]           = {literal,  NULL,   PREC_NONE},
   [TOKEN_OR]            = {NULL,     or_,    PREC_OR},
   [TOKEN_PRINT]         = {NULL,     NULL,   PREC_NONE},
+  [TOKEN_REPEAT]        = {NULL,     NULL,   PREC_NONE},
   [TOKEN_RETURN]        = {NULL,     NULL,   PREC_NONE},
   [TOKEN_SUPER]         = {NULL,     NULL,   PREC_NONE},
   [TOKEN_SWITCH]        = {NULL,     NULL,   PREC_NONE},
   [TOKEN_THIS]          = {NULL,     NULL,   PREC_NONE},
   [TOKEN_TRUE]          = {literal,  NULL,   PREC_NONE},
+  [TOKEN_UNTIL]         = {NULL,     NULL,   PREC_NONE},
   [TOKEN_VAR]           = {NULL,     NULL,   PREC_NONE},
   [TOKEN_VAL]           = {NULL,     NULL,   PREC_NONE},
   [TOKEN_WHILE]         = {NULL,     NULL,   PREC_NONE},
@@ -678,6 +680,48 @@ static void forStatement() {
   endScope();
 }
 
+// repeat/until: execute body once, then loop until condition is truthy.
+//
+// Bytecode layout:
+//   <loopStart>
+//     <body>
+//   <continueTarget>   <- continue lands here, right before condition
+//     <condition expression>
+//     OP_JUMP_IF_FALSE -> loopStart   (falsey = keep repeating)
+//     OP_POP                          (pop truthy result, exit loop)
+static void repeatStatement() {
+  int loopStart = currentChunk()->count;
+
+  // Save outer continue state.
+  int previousContinueTarget = current->continueTarget;
+  int previousContinueDepth  = current->continueDepth;
+  current->continueDepth = current->localCount;
+
+  // Compile body (always runs at least once).
+  statement();
+
+  // continue lands here, right before the until condition.
+  current->continueTarget = currentChunk()->count;
+
+  consume(TOKEN_UNTIL,       "Expect 'until' after repeat body.");
+  consume(TOKEN_LEFT_PAREN,  "Expect '(' after 'until'.");
+  expression();              // truthy = exit, falsey = repeat
+  consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
+  consume(TOKEN_SEMICOLON,   "Expect ';' after repeat statement.");
+
+  // Falsey condition: loop back and repeat.
+  int exitJump = emitJump(OP_JUMP_IF_FALSE);
+  emitByte(OP_POP);    // pop truthy result, fall out of loop
+
+  patchJump(exitJump);
+  emitByte(OP_POP);    // pop falsey result before looping back
+  emitLoop(loopStart);
+
+  // Restore outer loop continue state.
+  current->continueTarget = previousContinueTarget;
+  current->continueDepth  = previousContinueDepth;
+}
+
 static void continueStatement() {
   if (current->continueTarget == -1) {
     error("Cannot use 'continue' outside of a loop.");
@@ -822,7 +866,7 @@ static void synchronize() {
       case TOKEN_CLASS:    case TOKEN_FUN:      case TOKEN_VAR:
       case TOKEN_VAL:      case TOKEN_FOR:      case TOKEN_IF:
       case TOKEN_WHILE:    case TOKEN_PRINT:    case TOKEN_RETURN:
-      case TOKEN_SWITCH:   case TOKEN_CONTINUE:
+      case TOKEN_SWITCH:   case TOKEN_CONTINUE: case TOKEN_REPEAT:
         return;
       default: ;
     }
@@ -839,6 +883,8 @@ static void statement() {
     whileStatement();
   } else if (match(TOKEN_FOR)) {
     forStatement();
+  } else if (match(TOKEN_REPEAT)) {
+    repeatStatement();
   } else if (match(TOKEN_CONTINUE)) {
     continueStatement();
   } else if (match(TOKEN_SWITCH)) {
