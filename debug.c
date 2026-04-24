@@ -21,6 +21,15 @@ static int shortInstruction(const char* name, Chunk* chunk, int offset) {
   return offset + 3;
 }
 
+static int jumpInstruction(const char* name, int sign,
+                           Chunk* chunk, int offset) {
+  uint16_t jump = (uint16_t)(chunk->code[offset + 1] << 8);
+  jump |= chunk->code[offset + 2];
+  printf("%-18s %4d -> %d\n", name, offset,
+         offset + 3 + sign * jump);
+  return offset + 3;
+}
+
 static int constantInstruction(const char* name, Chunk* chunk, int offset) {
   uint8_t constant = chunk->code[offset + 1];
   printf("%-18s %4d '", name, constant);
@@ -80,6 +89,9 @@ int disassembleInstruction(Chunk* chunk, int offset) {
     case OP_NOT:           return simpleInstruction("OP_NOT",           offset);
     case OP_NEGATE:        return simpleInstruction("OP_NEGATE",        offset);
     case OP_PRINT:         return simpleInstruction("OP_PRINT",         offset);
+    case OP_JUMP:          return jumpInstruction("OP_JUMP",          1,  chunk, offset);
+    case OP_JUMP_IF_FALSE: return jumpInstruction("OP_JUMP_IF_FALSE", 1,  chunk, offset);
+    case OP_LOOP:          return jumpInstruction("OP_LOOP",          -1, chunk, offset);
     case OP_RETURN:        return simpleInstruction("OP_RETURN",        offset);
     default:
       printf("Unknown opcode %d\n", instruction);
