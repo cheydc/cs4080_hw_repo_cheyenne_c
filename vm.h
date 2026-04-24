@@ -5,19 +5,19 @@
 #include "table.h"
 #include "value.h"
 
-#define STACK_MAX 256
+#define STACK_MAX   256
 #define MAX_GLOBALS 256
 
 typedef struct {
-  Chunk* chunk;
-  uint8_t* ip;
-  Value stack[STACK_MAX];
-  Value* stackTop;
-  Value globals[MAX_GLOBALS];
+  Chunk*     chunk;
+  uint8_t*   ip;
+  Value      stack[STACK_MAX];
+  Value*     stackTop;
+  Value      globals[MAX_GLOBALS];
   ObjString* globalNames[MAX_GLOBALS];
-  int globalCount;
-  Table strings;
-  Obj* objects;
+  int        globalCount;
+  Table      strings;
+  Obj*       objects;
 } VM;
 
 typedef enum {
@@ -28,10 +28,10 @@ typedef enum {
 
 extern VM vm;
 
-void initVM();
-void freeVM();
+void            initVM();
+void            freeVM();
 InterpretResult interpret(const char* source);
-void push(Value value);
-Value pop();
+void            push(Value value);
+Value           pop();
 
 #endif

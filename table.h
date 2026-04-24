@@ -10,14 +10,13 @@ typedef struct {
 } Entry;
 
 typedef struct {
-  int count;
-  int capacity;
+  int    count;
+  int    capacity;
   Entry* entries;
 } Table;
 
 void initTable(Table* table);
 void freeTable(Table* table);
-
 bool tableGet(Table* table, Value key, Value* value);
 bool tableSet(Table* table, Value key, Value value);
 bool tableDelete(Table* table, Value key);
