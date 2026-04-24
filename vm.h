@@ -5,7 +5,7 @@
 #include "table.h"
 #include "value.h"
 
-#define STACK_MAX   256
+#define STACK_MAX   65536  // widened to match MAX_LOCALS
 #define MAX_GLOBALS 256
 
 typedef struct {
