@@ -76,6 +76,10 @@ typedef struct {
   int   localCount;
   int   scopeDepth;
   Table localTable;  // name (OBJ_VAL ObjString*) -> NUMBER_VAL(slot index)
+
+  // continue support: -1 means not inside a loop
+  int continueTarget;  // bytecode offset to jump back to on continue
+  int continueDepth;   // localCount at the top of the loop body (for popping locals)
 } Compiler;
 
 Parser    parser;
@@ -201,8 +205,10 @@ static void endCompiler() {
 // Compiler initialization
 // -----------------------------------------------------------------------
 static void initCompiler(Compiler* compiler) {
-  compiler->localCount = 0;
-  compiler->scopeDepth = 0;
+  compiler->localCount    = 0;
+  compiler->scopeDepth    = 0;
+  compiler->continueTarget = -1;
+  compiler->continueDepth  = 0;
   initTable(&compiler->localTable);
   current = compiler;
 }
@@ -502,6 +508,7 @@ ParseRule rules[] = {
   [TOKEN_AND]           = {NULL,     and_,   PREC_AND},
   [TOKEN_CASE]          = {NULL,     NULL,   PREC_NONE},
   [TOKEN_CLASS]         = {NULL,     NULL,   PREC_NONE},
+  [TOKEN_CONTINUE]      = {NULL,     NULL,   PREC_NONE},
   [TOKEN_DEFAULT]       = {NULL,     NULL,   PREC_NONE},
   [TOKEN_ELSE]          = {NULL,     NULL,   PREC_NONE},
   [TOKEN_FALSE]         = {literal,  NULL,   PREC_NONE},
@@ -587,6 +594,12 @@ static void ifStatement() {
 static void whileStatement() {
   int loopStart = currentChunk()->count;
 
+  // Save and set continue state.
+  int previousContinueTarget = current->continueTarget;
+  int previousContinueDepth  = current->continueDepth;
+  current->continueTarget = loopStart;
+  current->continueDepth  = current->localCount;
+
   consume(TOKEN_LEFT_PAREN,  "Expect '(' after 'while'.");
   expression();
   consume(TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
@@ -598,6 +611,10 @@ static void whileStatement() {
 
   patchJump(exitJump);
   emitByte(OP_POP);
+
+  // Restore outer loop's continue state.
+  current->continueTarget = previousContinueTarget;
+  current->continueDepth  = previousContinueDepth;
 }
 
 static void forStatement() {
@@ -625,6 +642,9 @@ static void forStatement() {
   }
 
   // Increment clause
+  // continueTarget defaults to loopStart (top of condition).
+  // If there's an increment, it becomes incrementStart instead.
+  int continueTarget = loopStart;
   if (!match(TOKEN_RIGHT_PAREN)) {
     int bodyJump       = emitJump(OP_JUMP);
     int incrementStart = currentChunk()->count;
@@ -632,9 +652,16 @@ static void forStatement() {
     emitByte(OP_POP);
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after for clauses.");
     emitLoop(loopStart);
-    loopStart = incrementStart;
+    loopStart      = incrementStart;
+    continueTarget = incrementStart;  // continue runs the increment
     patchJump(bodyJump);
   }
+
+  // Save and set continue state.
+  int previousContinueTarget = current->continueTarget;
+  int previousContinueDepth  = current->continueDepth;
+  current->continueTarget = continueTarget;
+  current->continueDepth  = current->localCount;
 
   statement();
   emitLoop(loopStart);
@@ -644,7 +671,29 @@ static void forStatement() {
     emitByte(OP_POP);
   }
 
+  // Restore outer loop's continue state.
+  current->continueTarget = previousContinueTarget;
+  current->continueDepth  = previousContinueDepth;
+
   endScope();
+}
+
+static void continueStatement() {
+  if (current->continueTarget == -1) {
+    error("Cannot use 'continue' outside of a loop.");
+  }
+  consume(TOKEN_SEMICOLON, "Expect ';' after 'continue'.");
+
+  // Pop any locals declared inside the loop body since the last
+  // loop iteration started. This keeps the stack consistent.
+  for (int i = current->localCount - 1;
+       i >= current->continueDepth; i--) {
+    emitByte(OP_POP);
+  }
+
+  // Jump back to the loop's continue target (condition for while,
+  // increment for for).
+  emitLoop(current->continueTarget);
 }
 
 // -----------------------------------------------------------------------
@@ -770,10 +819,10 @@ static void synchronize() {
   while (parser.current.type != TOKEN_EOF) {
     if (parser.previous.type == TOKEN_SEMICOLON) return;
     switch (parser.current.type) {
-      case TOKEN_CLASS:  case TOKEN_FUN:   case TOKEN_VAR:
-      case TOKEN_VAL:    case TOKEN_FOR:   case TOKEN_IF:
-      case TOKEN_WHILE:  case TOKEN_PRINT: case TOKEN_RETURN:
-      case TOKEN_SWITCH:
+      case TOKEN_CLASS:    case TOKEN_FUN:      case TOKEN_VAR:
+      case TOKEN_VAL:      case TOKEN_FOR:      case TOKEN_IF:
+      case TOKEN_WHILE:    case TOKEN_PRINT:    case TOKEN_RETURN:
+      case TOKEN_SWITCH:   case TOKEN_CONTINUE:
         return;
       default: ;
     }
@@ -790,6 +839,8 @@ static void statement() {
     whileStatement();
   } else if (match(TOKEN_FOR)) {
     forStatement();
+  } else if (match(TOKEN_CONTINUE)) {
+    continueStatement();
   } else if (match(TOKEN_SWITCH)) {
     switchStatement();
   } else if (match(TOKEN_LEFT_BRACE)) {
