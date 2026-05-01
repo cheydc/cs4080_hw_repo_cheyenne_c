@@ -43,15 +43,17 @@ static void runtimeError(const char* format, ...) {
   resetStack();
 }
 
-static Value clockNative(int argCount, Value* args) {
-  return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+// *** CHALLENGE 3 ***
+// Native functions now return NativeResult. Use nativeOk() to wrap the
+// return value, or nativeError() to signal a runtime error.
+static NativeResult clockNative(int argCount, Value* args) {
+  return nativeOk(NUMBER_VAL((double)clock() / CLOCKS_PER_SEC));
 }
 
-// *** CHALLENGE 2 ***
-// defineNative() now takes an arity parameter and forwards it to newNative().
+// Challenge 2: arity parameter added.
 static void defineNative(const char* name, NativeFn function, int arity) {
   push(OBJ_VAL(copyString(name, (int)strlen(name))));
-  push(OBJ_VAL(newNative(function, arity)));   // *** CHALLENGE 2 ***
+  push(OBJ_VAL(newNative(function, arity)));
   tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
   pop();
   pop();
@@ -62,8 +64,6 @@ void initVM() {
   initTable(&vm.globals);
   initTable(&vm.strings);
 
-  // *** CHALLENGE 2 ***
-  // Pass the expected argument count (0 for clock) as the third argument.
   defineNative("clock", clockNative, 0);
 }
 
@@ -106,7 +106,7 @@ static bool call(ObjFunction* function, int argCount) {
   return true;
 }
 
-// Challenge 1: returns int so run() knows whether to LOAD_IP after the call.
+// Challenge 1: returns int so run() knows whether to LOAD_IP.
 //   0 = new Lox frame pushed, caller must LOAD_IP
 //   1 = native ran to completion, ip unchanged
 //  -1 = runtime error
@@ -117,10 +117,7 @@ static int callValue(Value callee, int argCount) {
         return call(AS_FUNCTION(callee), argCount) ? 0 : -1;
 
       case OBJ_NATIVE: {
-        // *** CHALLENGE 2 ***
-        // Validate the argument count before calling the native function.
-        // Without this, passing the wrong number of args would let the native
-        // read uninitialized stack memory through the args pointer.
+        // Challenge 2: validate arity before calling.
         ObjNative* native = AS_NATIVE_OBJ(callee);
         if (argCount != native->arity) {
           runtimeError("Expected %d arguments but got %d.",
@@ -128,9 +125,18 @@ static int callValue(Value callee, int argCount) {
           return -1;
         }
 
-        Value result = native->function(argCount, vm.stackTop - argCount);
+        // *** CHALLENGE 3 ***
+        // Call the native and check whether it signaled an error.
+        // If ok is false, pass the error string to runtimeError() and bail.
+        NativeResult result = native->function(argCount,
+                                               vm.stackTop - argCount);
+        if (!result.ok) {
+          runtimeError("%s", result.as.error);
+          return -1;
+        }
+
         vm.stackTop -= argCount + 1;
-        push(result);
+        push(result.as.value);
         return 1;
       }
 

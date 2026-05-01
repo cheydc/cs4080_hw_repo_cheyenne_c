@@ -12,8 +12,7 @@
 #define IS_STRING(value)       isObjType(value, OBJ_STRING)
 
 #define AS_FUNCTION(value)     ((ObjFunction*)AS_OBJ(value))
-#define AS_NATIVE(value)       (((ObjNative*)AS_OBJ(value))->function)
-#define AS_NATIVE_OBJ(value)   ((ObjNative*)AS_OBJ(value))  // *** CHALLENGE 2 ***
+#define AS_NATIVE_OBJ(value)   ((ObjNative*)AS_OBJ(value))
 #define AS_STRING(value)       ((ObjString*)AS_OBJ(value))
 
 typedef enum {
@@ -34,14 +33,41 @@ typedef struct {
   ObjString* name;
 } ObjFunction;
 
-typedef Value (*NativeFn)(int argCount, Value* args);
+// *** CHALLENGE 3 ***
+// Instead of returning a raw Value, native functions return a NativeResult.
+// If ok is true, as.value holds the return value.
+// If ok is false, as.error holds a static error string for runtimeError().
+typedef struct {
+  bool ok;
+  union {
+    Value       value;
+    const char* error;
+  } as;
+} NativeResult;
 
-// *** CHALLENGE 2 ***
-// Added `arity` so the VM can validate argument count before calling the
-// native, the same way it does for ObjFunction.
+// Convenience constructors so natives don't have to fill the struct manually.
+static inline NativeResult nativeOk(Value value) {
+  NativeResult result;
+  result.ok = true;
+  result.as.value = value;
+  return result;
+}
+
+static inline NativeResult nativeError(const char* message) {
+  NativeResult result;
+  result.ok = false;
+  result.as.error = message;
+  return result;
+}
+
+// *** CHALLENGE 3 ***
+// NativeFn now returns NativeResult instead of Value.
+typedef NativeResult (*NativeFn)(int argCount, Value* args);
+
+// Challenge 2: ObjNative stores arity for argument count validation.
 typedef struct {
   Obj obj;
-  int arity;        // *** CHALLENGE 2 *** expected arg count
+  int arity;
   NativeFn function;
 } ObjNative;
 
@@ -53,7 +79,7 @@ struct ObjString {
 };
 
 ObjFunction* newFunction();
-ObjNative*   newNative(NativeFn function, int arity);  // *** CHALLENGE 2 ***
+ObjNative*   newNative(NativeFn function, int arity);
 ObjString*   takeString(char* chars, int length);
 ObjString*   copyString(const char* chars, int length);
 void         printObject(Value value);
