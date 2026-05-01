@@ -1,0 +1,36 @@
+// newton_sqrt.lox
+// Computes square root using Newton-Raphson iteration, then validates
+// the result against the native sqrt(). Demonstrates abs(), sqrt(),
+// floor(), and ceil().
+
+fun my_sqrt(n) {
+  var guess = n / 2;
+  var i = 0;
+  while (i < 50) {
+    guess = (guess + n / guess) / 2;
+    i = i + 1;
+  }
+  return guess;
+}
+
+// Test a few values and show floor/ceil of results.
+var inputs = 9;
+while (inputs <= 225) {
+  var result = my_sqrt(inputs);
+  var native  = sqrt(inputs);
+  var err     = abs(result - native);
+
+  print floor(result);
+  print ceil(result);
+
+  inputs = inputs + 36;
+}
+
+// min/max demo: clamp a value to a range.
+fun clamp(val, lo, hi) {
+  return max(lo, min(val, hi));
+}
+
+print clamp(150, 0, 100);  // 100
+print clamp(-5,  0, 100);  // 0
+print clamp(42,  0, 100);  // 42

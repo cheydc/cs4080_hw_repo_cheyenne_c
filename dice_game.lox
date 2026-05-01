@@ -1,0 +1,63 @@
+// dice_game.lox
+// Simple dice game: roll two dice, score points on 7 or 11,
+// lose on 2, 3, or 12, otherwise keep rolling until you match
+// your point or roll a 7.
+// Uses: random_int(), str_len()
+
+fun roll() {
+  return random_int(1, 6) + random_int(1, 6);
+}
+
+fun play_round() {
+  var first = roll();
+  print first;
+
+  if (first == 7 or first == 11) {
+    print "Win on come-out!";
+    return 1;
+  }
+
+  if (first == 2 or first == 3 or first == 12) {
+    print "Craps!";
+    return -1;
+  }
+
+  // Establish a point and keep rolling.
+  var point = first;
+  var r = 0;
+  while (true) {
+    r = roll();
+    print r;
+    if (r == point) {
+      print "Hit the point!";
+      return 1;
+    }
+    if (r == 7) {
+      print "Seven out!";
+      return -1;
+    }
+  }
+}
+
+// Play 5 rounds and track wins/losses.
+var wins = 0;
+var losses = 0;
+var round = 0;
+while (round < 5) {
+  var outcome = play_round();
+  if (outcome == 1) {
+    wins = wins + 1;
+  } else {
+    losses = losses + 1;
+  }
+  round = round + 1;
+}
+
+print wins;
+print losses;
+
+// str_len demo: pad a label to a fixed width.
+var label = "score";
+var padding = 10 - str_len(label);
+print str_len(label);   // 5
+print padding;          // 5

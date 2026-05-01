@@ -1,5 +1,7 @@
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -43,12 +45,93 @@ static void runtimeError(const char* format, ...) {
   resetStack();
 }
 
-// *** CHALLENGE 3 ***
-// Native functions now return NativeResult. Use nativeOk() to wrap the
-// return value, or nativeError() to signal a runtime error.
+// =============================================================================
+// *** CHALLENGE 4 *** Native function implementations
+// =============================================================================
+
 static NativeResult clockNative(int argCount, Value* args) {
   return nativeOk(NUMBER_VAL((double)clock() / CLOCKS_PER_SEC));
 }
+
+// --- sqrt(n) -----------------------------------------------------------------
+// Returns the square root of n. Errors on non-numbers and negative inputs,
+// demonstrating the Challenge 3 error signaling system.
+static NativeResult sqrtNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]))
+    return nativeError("sqrt() requires a number argument.");
+  double n = AS_NUMBER(args[0]);
+  if (n < 0)
+    return nativeError("sqrt() argument must be non-negative.");
+  return nativeOk(NUMBER_VAL(sqrt(n)));
+}
+
+// --- abs(n) ------------------------------------------------------------------
+static NativeResult absNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]))
+    return nativeError("abs() requires a number argument.");
+  return nativeOk(NUMBER_VAL(fabs(AS_NUMBER(args[0]))));
+}
+
+// --- floor(n) ----------------------------------------------------------------
+static NativeResult floorNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]))
+    return nativeError("floor() requires a number argument.");
+  return nativeOk(NUMBER_VAL(floor(AS_NUMBER(args[0]))));
+}
+
+// --- ceil(n) -----------------------------------------------------------------
+static NativeResult ceilNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]))
+    return nativeError("ceil() requires a number argument.");
+  return nativeOk(NUMBER_VAL(ceil(AS_NUMBER(args[0]))));
+}
+
+// --- min(a, b) ---------------------------------------------------------------
+static NativeResult minNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]) || !IS_NUMBER(args[1]))
+    return nativeError("min() requires two number arguments.");
+  double a = AS_NUMBER(args[0]);
+  double b = AS_NUMBER(args[1]);
+  return nativeOk(NUMBER_VAL(a < b ? a : b));
+}
+
+// --- max(a, b) ---------------------------------------------------------------
+static NativeResult maxNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]) || !IS_NUMBER(args[1]))
+    return nativeError("max() requires two number arguments.");
+  double a = AS_NUMBER(args[0]);
+  double b = AS_NUMBER(args[1]);
+  return nativeOk(NUMBER_VAL(a > b ? a : b));
+}
+
+// --- str_len(s) --------------------------------------------------------------
+// Returns the character length of a string. This fills a real gap in Lox
+// since the language has no other way to inspect a string's length.
+static NativeResult strLenNative(int argCount, Value* args) {
+  if (!IS_STRING(args[0]))
+    return nativeError("str_len() requires a string argument.");
+  return nativeOk(NUMBER_VAL((double)AS_STRING(args[0])->length));
+}
+
+// --- random() ----------------------------------------------------------------
+// Returns a random float in [0, 1). Seeded once in initVM().
+static NativeResult randomNative(int argCount, Value* args) {
+  return nativeOk(NUMBER_VAL((double)rand() / ((double)RAND_MAX + 1.0)));
+}
+
+// --- random_int(lo, hi) ------------------------------------------------------
+// Returns a random integer in the inclusive range [lo, hi].
+static NativeResult randomIntNative(int argCount, Value* args) {
+  if (!IS_NUMBER(args[0]) || !IS_NUMBER(args[1]))
+    return nativeError("random_int() requires two number arguments.");
+  int lo = (int)AS_NUMBER(args[0]);
+  int hi = (int)AS_NUMBER(args[1]);
+  if (lo > hi)
+    return nativeError("random_int() requires lo <= hi.");
+  return nativeOk(NUMBER_VAL((double)(lo + rand() % (hi - lo + 1))));
+}
+
+// =============================================================================
 
 // Challenge 2: arity parameter added.
 static void defineNative(const char* name, NativeFn function, int arity) {
@@ -64,7 +147,19 @@ void initVM() {
   initTable(&vm.globals);
   initTable(&vm.strings);
 
-  defineNative("clock", clockNative, 0);
+  srand((unsigned int)time(NULL));
+
+  // *** CHALLENGE 4 *** Register all native functions.
+  defineNative("clock",      clockNative,    0);
+  defineNative("sqrt",       sqrtNative,     1);
+  defineNative("abs",        absNative,      1);
+  defineNative("floor",      floorNative,    1);
+  defineNative("ceil",       ceilNative,     1);
+  defineNative("min",        minNative,      2);
+  defineNative("max",        maxNative,      2);
+  defineNative("str_len",    strLenNative,   1);
+  defineNative("random",     randomNative,   0);
+  defineNative("random_int", randomIntNative, 2);
 }
 
 void freeVM() {
@@ -125,9 +220,7 @@ static int callValue(Value callee, int argCount) {
           return -1;
         }
 
-        // *** CHALLENGE 3 ***
-        // Call the native and check whether it signaled an error.
-        // If ok is false, pass the error string to runtimeError() and bail.
+        // Challenge 3: check NativeResult for errors.
         NativeResult result = native->function(argCount,
                                                vm.stackTop - argCount);
         if (!result.ok) {

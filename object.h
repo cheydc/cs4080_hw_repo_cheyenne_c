@@ -12,8 +12,10 @@
 #define IS_STRING(value)       isObjType(value, OBJ_STRING)
 
 #define AS_FUNCTION(value)     ((ObjFunction*)AS_OBJ(value))
+#define AS_NATIVE(value)       (((ObjNative*)AS_OBJ(value))->function)
 #define AS_NATIVE_OBJ(value)   ((ObjNative*)AS_OBJ(value))
 #define AS_STRING(value)       ((ObjString*)AS_OBJ(value))
+#define AS_CSTRING(value)      (((ObjString*)AS_OBJ(value))->chars)
 
 typedef enum {
   OBJ_FUNCTION,
@@ -34,9 +36,8 @@ typedef struct {
 } ObjFunction;
 
 // *** CHALLENGE 3 ***
-// Instead of returning a raw Value, native functions return a NativeResult.
-// If ok is true, as.value holds the return value.
-// If ok is false, as.error holds a static error string for runtimeError().
+// NativeResult lets native functions signal a runtime error instead of
+// being forced to always return a Value.
 typedef struct {
   bool ok;
   union {
@@ -45,7 +46,6 @@ typedef struct {
   } as;
 } NativeResult;
 
-// Convenience constructors so natives don't have to fill the struct manually.
 static inline NativeResult nativeOk(Value value) {
   NativeResult result;
   result.ok = true;

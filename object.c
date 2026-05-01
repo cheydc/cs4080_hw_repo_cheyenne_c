@@ -26,13 +26,11 @@ ObjFunction* newFunction() {
   return function;
 }
 
-// *** CHALLENGE 2 ***
-// newNative() now takes an arity parameter and stores it in the struct so
-// callValue() can validate argument counts at the call site.
+// Challenge 2: newNative() takes an arity parameter.
 ObjNative* newNative(NativeFn function, int arity) {
   ObjNative* native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
   native->function = function;
-  native->arity = arity;   // *** CHALLENGE 2 ***
+  native->arity = arity;
   return native;
 }
 
