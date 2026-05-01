@@ -12,10 +12,7 @@
 
 VM vm;
 
-// *** CHALLENGE 1 ***
-// SAVE_IP writes the local register variable back to the frame before any
-// frame switch or error. LOAD_IP pulls it back in after a frame switch.
-// These are only used inside run().
+// Challenge 1: save/load macros for the register ip variable in run().
 #define SAVE_IP() (frame->ip = ip)
 #define LOAD_IP() (ip = frame->ip)
 
@@ -46,9 +43,15 @@ static void runtimeError(const char* format, ...) {
   resetStack();
 }
 
-static void defineNative(const char* name, NativeFn function) {
+static Value clockNative(int argCount, Value* args) {
+  return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+}
+
+// *** CHALLENGE 2 ***
+// defineNative() now takes an arity parameter and forwards it to newNative().
+static void defineNative(const char* name, NativeFn function, int arity) {
   push(OBJ_VAL(copyString(name, (int)strlen(name))));
-  push(OBJ_VAL(newNative(function)));
+  push(OBJ_VAL(newNative(function, arity)));   // *** CHALLENGE 2 ***
   tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
   pop();
   pop();
@@ -59,7 +62,9 @@ void initVM() {
   initTable(&vm.globals);
   initTable(&vm.strings);
 
-  defineNative("clock", clockNative);
+  // *** CHALLENGE 2 ***
+  // Pass the expected argument count (0 for clock) as the third argument.
+  defineNative("clock", clockNative, 0);
 }
 
 void freeVM() {
@@ -101,24 +106,34 @@ static bool call(ObjFunction* function, int argCount) {
   return true;
 }
 
-// *** CHALLENGE 1 ***
-// callValue() now returns an int instead of bool so run() can tell whether
-// it needs to reload ip from a new CallFrame:
-//   0 = new Lox frame was pushed, caller must LOAD_IP
-//   1 = native ran to completion, ip is unchanged
+// Challenge 1: returns int so run() knows whether to LOAD_IP after the call.
+//   0 = new Lox frame pushed, caller must LOAD_IP
+//   1 = native ran to completion, ip unchanged
 //  -1 = runtime error
 static int callValue(Value callee, int argCount) {
   if (IS_OBJ(callee)) {
     switch (OBJ_TYPE(callee)) {
       case OBJ_FUNCTION:
         return call(AS_FUNCTION(callee), argCount) ? 0 : -1;
+
       case OBJ_NATIVE: {
-        NativeFn native = AS_NATIVE(callee);
-        Value result = native(argCount, vm.stackTop - argCount);
+        // *** CHALLENGE 2 ***
+        // Validate the argument count before calling the native function.
+        // Without this, passing the wrong number of args would let the native
+        // read uninitialized stack memory through the args pointer.
+        ObjNative* native = AS_NATIVE_OBJ(callee);
+        if (argCount != native->arity) {
+          runtimeError("Expected %d arguments but got %d.",
+              native->arity, argCount);
+          return -1;
+        }
+
+        Value result = native->function(argCount, vm.stackTop - argCount);
         vm.stackTop -= argCount + 1;
         push(result);
         return 1;
       }
+
       default:
         break;
     }
@@ -146,13 +161,9 @@ static void concatenate() {
 static InterpretResult run() {
   CallFrame* frame = &vm.frames[vm.frameCount - 1];
 
-  // *** CHALLENGE 1 ***
-  // Cache ip in a register-hinted local variable. The C compiler will very
-  // likely keep this in a CPU register across loop iterations, avoiding the
-  // pointer indirection through frame->ip on every single instruction.
+  // Challenge 1: cache ip in a register-hinted local variable.
   register uint8_t* ip = frame->ip;
 
-  // Bytecode access macros now read from the local `ip`, not frame->ip.
   #define READ_BYTE()     (*ip++)
   #define READ_SHORT() \
       (ip += 2, (uint16_t)((ip[-2] << 8) | ip[-1]))
@@ -288,12 +299,6 @@ static InterpretResult run() {
         ip -= offset;
         break;
       }
-
-      // *** CHALLENGE 1 ***
-      // Before handing off to callValue(), save ip into the current frame so
-      // it's consistent. If callValue() pushed a new Lox frame (status == 0),
-      // update `frame` and reload ip from the new frame. If a native ran
-      // (status == 1), ip is still valid and we don't touch it.
       case OP_CALL: {
         int argCount = READ_BYTE();
         SAVE_IP();
@@ -305,10 +310,6 @@ static InterpretResult run() {
         }
         break;
       }
-
-      // *** CHALLENGE 1 ***
-      // Save ip before touching frameCount, then reload from the caller's
-      // frame after the stack is restored.
       case OP_RETURN: {
         Value result = pop();
         SAVE_IP();

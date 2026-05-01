@@ -5,21 +5,18 @@
 #include "chunk.h"
 #include "value.h"
 
-#define OBJ_TYPE(value)     (AS_OBJ(value)->type)
+#define OBJ_TYPE(value)        (AS_OBJ(value)->type)
 
-#define IS_CLOSURE(value)   isObjType(value, OBJ_CLOSURE)
-#define IS_FUNCTION(value)  isObjType(value, OBJ_FUNCTION)
-#define IS_NATIVE(value)    isObjType(value, OBJ_NATIVE)
-#define IS_STRING(value)    isObjType(value, OBJ_STRING)
+#define IS_FUNCTION(value)     isObjType(value, OBJ_FUNCTION)
+#define IS_NATIVE(value)       isObjType(value, OBJ_NATIVE)
+#define IS_STRING(value)       isObjType(value, OBJ_STRING)
 
-#define AS_CLOSURE(value)   ((ObjClosure*)AS_OBJ(value))
-#define AS_FUNCTION(value)  ((ObjFunction*)AS_OBJ(value))
-#define AS_NATIVE(value)    (((ObjNative*)AS_OBJ(value))->function)
-#define AS_STRING(value)    ((ObjString*)AS_OBJ(value))
-#define AS_CSTRING(value)   (((ObjString*)AS_OBJ(value))->chars)
+#define AS_FUNCTION(value)     ((ObjFunction*)AS_OBJ(value))
+#define AS_NATIVE(value)       (((ObjNative*)AS_OBJ(value))->function)
+#define AS_NATIVE_OBJ(value)   ((ObjNative*)AS_OBJ(value))  // *** CHALLENGE 2 ***
+#define AS_STRING(value)       ((ObjString*)AS_OBJ(value))
 
 typedef enum {
-  OBJ_CLOSURE,
   OBJ_FUNCTION,
   OBJ_NATIVE,
   OBJ_STRING,
@@ -33,22 +30,20 @@ struct Obj {
 typedef struct {
   Obj obj;
   int arity;
-  int upvalueCount;
   Chunk chunk;
   ObjString* name;
 } ObjFunction;
 
 typedef Value (*NativeFn)(int argCount, Value* args);
 
+// *** CHALLENGE 2 ***
+// Added `arity` so the VM can validate argument count before calling the
+// native, the same way it does for ObjFunction.
 typedef struct {
   Obj obj;
+  int arity;        // *** CHALLENGE 2 *** expected arg count
   NativeFn function;
 } ObjNative;
-
-typedef struct {
-  Obj obj;
-  ObjFunction* function;
-} ObjClosure;
 
 struct ObjString {
   Obj obj;
@@ -57,12 +52,11 @@ struct ObjString {
   uint32_t hash;
 };
 
-ObjClosure* newClosure(ObjFunction* function);
 ObjFunction* newFunction();
-ObjNative* newNative(NativeFn function);
-ObjString* takeString(char* chars, int length);
-ObjString* copyString(const char* chars, int length);
-void printObject(Value value);
+ObjNative*   newNative(NativeFn function, int arity);  // *** CHALLENGE 2 ***
+ObjString*   takeString(char* chars, int length);
+ObjString*   copyString(const char* chars, int length);
+void         printObject(Value value);
 
 static inline bool isObjType(Value value, ObjType type) {
   return IS_OBJ(value) && AS_OBJ(value)->type == type;

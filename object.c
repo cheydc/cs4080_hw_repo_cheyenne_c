@@ -18,24 +18,21 @@ static Obj* allocateObject(size_t size, ObjType type) {
   return object;
 }
 
-ObjClosure* newClosure(ObjFunction* function) {
-  ObjClosure* closure = ALLOCATE_OBJ(ObjClosure, OBJ_CLOSURE);
-  closure->function = function;
-  return closure;
-}
-
 ObjFunction* newFunction() {
   ObjFunction* function = ALLOCATE_OBJ(ObjFunction, OBJ_FUNCTION);
   function->arity = 0;
-  function->upvalueCount = 0;
   function->name = NULL;
   initChunk(&function->chunk);
   return function;
 }
 
-ObjNative* newNative(NativeFn function) {
+// *** CHALLENGE 2 ***
+// newNative() now takes an arity parameter and stores it in the struct so
+// callValue() can validate argument counts at the call site.
+ObjNative* newNative(NativeFn function, int arity) {
   ObjNative* native = ALLOCATE_OBJ(ObjNative, OBJ_NATIVE);
   native->function = function;
+  native->arity = arity;   // *** CHALLENGE 2 ***
   return native;
 }
 
@@ -88,9 +85,6 @@ static void printFunction(ObjFunction* function) {
 
 void printObject(Value value) {
   switch (OBJ_TYPE(value)) {
-    case OBJ_CLOSURE:
-      printFunction(AS_CLOSURE(value)->function);
-      break;
     case OBJ_FUNCTION:
       printFunction(AS_FUNCTION(value));
       break;
