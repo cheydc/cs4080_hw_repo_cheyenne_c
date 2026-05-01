@@ -6,28 +6,28 @@
 #include "value.h"
 
 #define FRAMES_MAX 64
-#define STACK_MAX  (FRAMES_MAX * UINT8_COUNT)
+#define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
 
 typedef struct {
-  ObjClosure* closure;
-  uint8_t* ip;
+  ObjFunction* function;
+  uint8_t* ip;    // synced from/to the register ip in run() on frame switches
   Value* slots;
 } CallFrame;
 
 typedef struct {
   CallFrame frames[FRAMES_MAX];
   int frameCount;
+
   Value stack[STACK_MAX];
   Value* stackTop;
   Table globals;
   Table strings;
-  Obj* objects;
 } VM;
 
 typedef enum {
   INTERPRET_OK,
   INTERPRET_COMPILE_ERROR,
-  INTERPRET_RUNTIME_ERROR,
+  INTERPRET_RUNTIME_ERROR
 } InterpretResult;
 
 extern VM vm;
