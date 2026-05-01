@@ -1,0 +1,68 @@
+// vector.lox
+// Challenge 3: Two-dimensional vector "objects" built entirely from closures.
+//
+// The famous koan says "objects are a poor man's closure (and vice versa)."
+// This program demonstrates that: a closure captures mutable state (x, y),
+// and a dispatch function acts as the method table. The caller calls the
+// "object" (really a function) with a string method name to get behavior.
+
+fun makeVector(initX, initY) {
+  var x = initX;
+  var y = initY;
+
+  // "Methods" -- each closure captures the same x and y variables.
+
+  fun getX() {
+    return x;
+  }
+
+  fun getY() {
+    return y;
+  }
+
+  // add() returns a new vector whose coordinates are the sum of this
+  // vector and another. The other vector is passed as a dispatch function
+  // and queried through its own getX/getY methods.
+  fun add(other) {
+    return makeVector(x + other("getX")(), y + other("getY")());
+  }
+
+  fun print_vec() {
+    print x;
+    print y;
+  }
+
+  // The dispatch function IS the "object". Calling it with a method name
+  // returns the corresponding closure.
+  fun dispatch(method) {
+    if (method == "getX")  return getX;
+    if (method == "getY")  return getY;
+    if (method == "add")   return add;
+    if (method == "print") return print_vec;
+  }
+
+  return dispatch;
+}
+
+// ── Create two vectors ────────────────────────────────────────────────────
+var v1 = makeVector(1, 2);
+var v2 = makeVector(3, 4);
+
+// ── Access x and y via "methods" ─────────────────────────────────────────
+print v1("getX")();   // 1
+print v1("getY")();   // 2
+print v2("getX")();   // 3
+print v2("getY")();   // 4
+
+// ── Add two vectors, producing a third ───────────────────────────────────
+var v3 = v1("add")(v2);
+print v3("getX")();   // 4  (1 + 3)
+print v3("getY")();   // 6  (2 + 4)
+
+// ── Print using the print "method" ───────────────────────────────────────
+v3("print")();        // 4 then 6
+
+// ── Chain: add v1 + v2 + v2 ──────────────────────────────────────────────
+var v4 = v3("add")(v2);
+print v4("getX")();   // 7  (4 + 3)
+print v4("getY")();   // 10 (6 + 4)

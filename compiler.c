@@ -523,9 +523,11 @@ static void expressionStatement() {
 static void forStatement() {
   beginScope();
   consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
+  int loopVarSlot = -1;
   if (match(TOKEN_SEMICOLON)) {
     // no initializer
   } else if (match(TOKEN_VAR)) {
+    loopVarSlot = current->localCount;
     varDeclaration();
   } else {
     expressionStatement();
@@ -551,7 +553,24 @@ static void forStatement() {
     patchJump(bodyJump);
   }
 
+  int iterVarSlot = -1;
+  if (loopVarSlot != -1) {
+    beginScope();
+    emitBytes(OP_GET_LOCAL, (uint8_t)loopVarSlot);
+    addLocal(current->locals[loopVarSlot].name);
+    markInitialized();
+    iterVarSlot = current->localCount - 1;
+  }
+
   statement();
+
+  if (iterVarSlot != -1) {
+    emitBytes(OP_GET_LOCAL, (uint8_t)iterVarSlot);
+    emitBytes(OP_SET_LOCAL, (uint8_t)loopVarSlot);
+    emitByte(OP_POP);
+    endScope();
+  }
+  
   emitLoop(loopStart);
 
   if (exitJump != -1) {
@@ -637,6 +656,7 @@ static void declaration() {
   if (match(TOKEN_FUN)) {
     funDeclaration();
   } else if (match(TOKEN_VAR)) {
+    loopVarSlot = current->localCount;
     varDeclaration();
   } else {
     statement();
