@@ -1,6 +1,8 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "memory.h"
+#include "object.h"
 #include "table.h"
 #include "value.h"
 
@@ -17,67 +19,44 @@ void freeTable(Table* table) {
   initTable(table);
 }
 
-static uint32_t hashValue(Value value) {
-  switch (value.type) {
-    case VAL_BOOL:
-      return AS_BOOL(value) ? 1 : 2;
-
-    case VAL_NIL:
-      return 3;
-
-    case VAL_NUMBER: {
-      union {
-        double num;
-        uint64_t bits;
-      } data;
-      data.num = AS_NUMBER(value);
-      return (uint32_t)(data.bits ^ (data.bits >> 32));
-    }
-
-    case VAL_OBJ:
-      if (IS_STRING(value)) {
-        return AS_STRING(value)->hash;
-      }
-      return (uint32_t)(uintptr_t)AS_OBJ(value);
-  }
-  return 0;
-}
-
-static Entry* findEntry(Entry* entries, int capacity, Value key) {
-  uint32_t index = hashValue(key) % capacity;
+static Entry* findEntry(Entry* entries, int capacity, ObjString* key) {
+  uint32_t index = key->hash % capacity;
   Entry* tombstone = NULL;
 
   for (;;) {
     Entry* entry = &entries[index];
-
-    if (IS_NIL(entry->key)) {
+    if (entry->key == NULL) {
       if (IS_NIL(entry->value)) {
         return tombstone != NULL ? tombstone : entry;
       } else {
         if (tombstone == NULL) tombstone = entry;
       }
-    } else if (valuesEqual(entry->key, key)) {
+    } else if (entry->key == key) {
       return entry;
     }
-
     index = (index + 1) % capacity;
   }
 }
 
+bool tableGet(Table* table, ObjString* key, Value* value) {
+  if (table->count == 0) return false;
+  Entry* entry = findEntry(table->entries, table->capacity, key);
+  if (entry->key == NULL) return false;
+  *value = entry->value;
+  return true;
+}
+
 static void adjustCapacity(Table* table, int capacity) {
   Entry* entries = ALLOCATE(Entry, capacity);
-
   for (int i = 0; i < capacity; i++) {
-    entries[i].key = NIL_VAL;
+    entries[i].key = NULL;
     entries[i].value = NIL_VAL;
   }
 
   table->count = 0;
-
   for (int i = 0; i < table->capacity; i++) {
     Entry* entry = &table->entries[i];
-    if (IS_NIL(entry->key)) continue;
-
+    if (entry->key == NULL) continue;
     Entry* dest = findEntry(entries, capacity, entry->key);
     dest->key = entry->key;
     dest->value = entry->value;
@@ -89,15 +68,14 @@ static void adjustCapacity(Table* table, int capacity) {
   table->capacity = capacity;
 }
 
-bool tableSet(Table* table, Value key, Value value) {
+bool tableSet(Table* table, ObjString* key, Value value) {
   if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
     int capacity = GROW_CAPACITY(table->capacity);
     adjustCapacity(table, capacity);
   }
 
   Entry* entry = findEntry(table->entries, table->capacity, key);
-  bool isNewKey = IS_NIL(entry->key);
-
+  bool isNewKey = entry->key == NULL;
   if (isNewKey && IS_NIL(entry->value)) table->count++;
 
   entry->key = key;
@@ -105,23 +83,38 @@ bool tableSet(Table* table, Value key, Value value) {
   return isNewKey;
 }
 
-bool tableGet(Table* table, Value key, Value* value) {
+bool tableDelete(Table* table, ObjString* key) {
   if (table->count == 0) return false;
-
   Entry* entry = findEntry(table->entries, table->capacity, key);
-  if (IS_NIL(entry->key)) return false;
-
-  *value = entry->value;
+  if (entry->key == NULL) return false;
+  entry->key = NULL;
+  entry->value = BOOL_VAL(true);
   return true;
 }
 
-bool tableDelete(Table* table, Value key) {
-  if (table->count == 0) return false;
+void tableAddAll(Table* from, Table* to) {
+  for (int i = 0; i < from->capacity; i++) {
+    Entry* entry = &from->entries[i];
+    if (entry->key != NULL) {
+      tableSet(to, entry->key, entry->value);
+    }
+  }
+}
 
-  Entry* entry = findEntry(table->entries, table->capacity, key);
-  if (IS_NIL(entry->key)) return false;
+ObjString* tableFindString(Table* table, const char* chars,
+                           int length, uint32_t hash) {
+  if (table->count == 0) return NULL;
+  uint32_t index = hash % table->capacity;
 
-  entry->key = NIL_VAL;
-  entry->value = BOOL_VAL(true);
-  return true;
+  for (;;) {
+    Entry* entry = &table->entries[index];
+    if (entry->key == NULL) {
+      if (IS_NIL(entry->value)) return NULL;
+    } else if (entry->key->length == length &&
+               entry->key->hash == hash &&
+               memcmp(entry->key->chars, chars, length) == 0) {
+      return entry->key;
+    }
+    index = (index + 1) % table->capacity;
+  }
 }
